@@ -99,7 +99,8 @@ public final class PathWatcherFactory {
     }
 
     private PathWatcher createWatcher(Path rootPath, boolean recursive, PathChangeListener listener) {
-        PathWatcher watcherDelegate = new WatchServicePathWatcher(rootPath, watchRegistrationFactory, recursive, listener);
+        PathWatcher watcherDelegate = new WatchServicePathWatcher(rootPath, watchRegistrationFactory,
+                recursive, listener, globalLifecycleListener);
         return new RunnablePathWatcherAdapter(watcherDelegate, executorService, globalLifecycleListener);
     }
 
@@ -134,13 +135,14 @@ public final class PathWatcherFactory {
          * @see PathWatcher#start()
          */
         @Override
-        public void start() {
+        public PathWatcher start() {
             if (future != null) {
                 throw new IllegalStateException("Cannot start a PathWatcher that is already running.");
             }
             LOG.trace("Submitting '{}' to executor service.", delegate);
             //submit itself when client wants to start watching. The pool will invoke the runnable when its ready
             future = executorService.submit(this);
+            return this;
         }
 
         @Override
@@ -165,12 +167,6 @@ public final class PathWatcherFactory {
         @Override
         public void run() {
             LOG.trace("About to run '{}'.", delegate);
-            Silently.run(new Block() {
-                @Override
-                public void run() {
-                    lifecycleListener.onStart(RunnablePathWatcherAdapter.this);
-                }
-            });
             try {
                 delegate.start();
                 //Catch all exceptions - not just IOException. Implementation might throw other exceptions as well
@@ -207,7 +203,7 @@ public final class PathWatcherFactory {
         // use as if it were a logger of the outer class to hide internal implementation structure
         private static final Logger LOG = LoggerFactory.getLogger(PathWatcherFactory.class);
 
-        public static void run(Block block) {
+        static void run(Block block) {
             try {
                 block.run();
             } catch (Exception ex) {
@@ -216,12 +212,12 @@ public final class PathWatcherFactory {
         }
     }
 
-    private static interface Block {
+    private interface Block {
         void run();
     }
 
-    private static final class NoOpLifecycleListener implements LifecycleListener {
-        public static final NoOpLifecycleListener INSTANCE = new NoOpLifecycleListener();
+    static final class NoOpLifecycleListener implements LifecycleListener {
+        static final NoOpLifecycleListener INSTANCE = new NoOpLifecycleListener();
 
         @Override
         public void onStart(PathWatcher pathWatcher) {

@@ -1,5 +1,6 @@
 package name.mitterdorfer.perlock.impl;
 
+import name.mitterdorfer.perlock.LifecycleListener;
 import name.mitterdorfer.perlock.impl.watch.WatchRegistrationFactory;
 import name.mitterdorfer.perlock.impl.util.Preconditions;
 import name.mitterdorfer.perlock.impl.watch.WatchRegistrationStrategy;
@@ -33,16 +34,22 @@ public final class WatchServicePathWatcher implements PathWatcher {
     private final PathChangeListener listener;
     private final Path rootPath;
     private final WatchRegistrationStrategy registry;
+    private final LifecycleListener lifecycleListener;
     //no need to declare watcher as volatile. It should only be used from the Watcher thread, otherwise something went
     //seriously wrong...
     private WatchService watcher;
     // due to #isRunning() we need visibility of running across threads...
     private volatile boolean running;
 
-    public WatchServicePathWatcher(Path rootPath, WatchRegistrationFactory factory, boolean recursive, PathChangeListener listener) {
+    public WatchServicePathWatcher(Path rootPath,
+                                   WatchRegistrationFactory factory,
+                                   boolean recursive,
+                                   PathChangeListener listener,
+                                   LifecycleListener lifecycleListener) {
         Preconditions.isNotNull(rootPath, "rootPath");
         Preconditions.isNotNull(factory, "factory");
         Preconditions.isNotNull(listener, "listener");
+        Preconditions.isNotNull(lifecycleListener, "lifecycleListener");
         Preconditions.isTrue(Files.exists(rootPath), String.format("'rootPath' (%s) must exist", rootPath.getFileName()));
         Preconditions.isTrue(Files.isReadable(rootPath), String.format("'rootPath' (%s) must be readable", rootPath.getFileName()));
         Preconditions.isTrue(Files.isDirectory(rootPath), String.format("'rootPath' (%s) must be a directory", rootPath.getFileName()));
@@ -50,6 +57,7 @@ public final class WatchServicePathWatcher implements PathWatcher {
         this.keys = new HashMap<>();
         this.rootPath = rootPath;
         this.listener = listener;
+        this.lifecycleListener = lifecycleListener;
         this.registry = factory.createRegistrationStrategy(keys, recursive);
     }
 
@@ -75,11 +83,13 @@ public final class WatchServicePathWatcher implements PathWatcher {
      * Process all events for keys queued to the watcher
      */
     @Override
-    public void start() throws IOException {
+    public PathWatcher start() throws IOException {
         prepareWatcher();
         performRegistration();
         running = true;
+        lifecycleListener.onStart(this);
         watch();
+        return this;
     }
 
     @Override
