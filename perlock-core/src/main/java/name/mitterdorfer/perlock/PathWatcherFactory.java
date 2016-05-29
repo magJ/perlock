@@ -7,8 +7,10 @@ import name.mitterdorfer.perlock.impl.watch.WatchRegistrationFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
 /**
@@ -98,16 +100,89 @@ public final class PathWatcherFactory {
         return createWatcher(rootPath, false, listener);
     }
 
+
+    /**
+     * Creates a {@link PathWatcher} that watched for changes to the designated file, backed by a single thread executor.
+     * @param path The path to a precise file or directory to watch for changes.
+     * @param pathChangeListener The callback handler for when something happens to the file
+     * @return A new <code>PathWatcher</code> instance
+     */
+    public static PathWatcher createSinglePathWatcher(Path path, PathChangeListener pathChangeListener){
+        return createSinglePathWatcher(path, pathChangeListener, Executors.newSingleThreadExecutor());
+    }
+
+    /**
+     * Creates a {@link PathWatcher} that watched for changes to the designated file.
+     * @param path The path to a precise file or directory to watch for changes.
+     * @param pathChangeListener The callback handler for when something happens to the file
+     * @param executorService The executor service to run the PatchWatcher thread on.
+     * @return A new <code>PathWatcher</code> instance
+     */
+    public static PathWatcher createSinglePathWatcher(
+            Path path,
+            PathChangeListener pathChangeListener,
+            ExecutorService executorService){
+        return createSinglePathWatcher(path, pathChangeListener, executorService, new PathWatcherFactory.NoOpLifecycleListener());
+    }
+
+    public static PathWatcher createSinglePathWatcher(
+            Path path,
+            PathChangeListener pathChangeListener,
+            LifecycleListener lifecycleListener){
+        return createSinglePathWatcher(path, pathChangeListener, Executors.newSingleThreadExecutor(), lifecycleListener);
+    }
+
+    /**
+     * Creates a {@link PathWatcher} that watched for changes to the designated file.
+     * @param path The path to a precise file or directory to watch for changes.
+     * @param pathChangeListener The callback handler for when something happens to the file
+     * @param executorService The executor service to run the PatchWatcher thread on.
+     * @param lifecycleListener A <code>LifeCycleListener</code> implementation that is called every time a lifecycle
+     *                          event happens for a path watcher. Must not be null.
+     * @return A new <code>PathWatcher</code> instance
+     */
+    public static PathWatcher createSinglePathWatcher(
+            Path path,
+            PathChangeListener pathChangeListener,
+            ExecutorService executorService,
+            LifecycleListener lifecycleListener){
+        Preconditions.isNotNull(path, "path");
+        Preconditions.isNotNull(pathChangeListener, "pathChangeListener");
+        Preconditions.isNotNull(executorService, "executorService");
+        Preconditions.isNotNull(lifecycleListener, "lifecycleListener");
+        PathWatcherFactory pathWatcherFactory = new PathWatcherFactory(executorService, lifecycleListener);
+        return pathWatcherFactory.createNonRecursiveWatcher(path.getParent(),
+                new SinglePathChangeListener(path, pathChangeListener));
+    }
+
     private PathWatcher createWatcher(Path rootPath, boolean recursive, PathChangeListener listener) {
-        PathWatcher watcherDelegate = new WatchServicePathWatcher(rootPath, watchRegistrationFactory,
-                recursive, listener, globalLifecycleListener);
+        WatchServicePathWatcher watcherDelegate = new WatchServicePathWatcher(rootPath, watchRegistrationFactory,
+                recursive, listener);
         return new RunnablePathWatcherAdapter(watcherDelegate, executorService, globalLifecycleListener);
+    }
+
+    private static final class SinglePathChangeListener implements PathChangeListener {
+
+        private final Path path;
+        private final PathChangeListener pathChangeListener;
+
+        SinglePathChangeListener(Path path, PathChangeListener pathChangeListener) {
+            this.path = path;
+            this.pathChangeListener = pathChangeListener;
+        }
+
+        @Override
+        public void onPathChanged(EventKind eventKind, Path path) {
+            if(path.equals(this.path)){
+                pathChangeListener.onPathChanged(eventKind, path);
+            }
+        }
     }
 
     private static final class RunnablePathWatcherAdapter implements Runnable, PathWatcher {
         private static final Logger LOG = LoggerFactory.getLogger(RunnablePathWatcherAdapter.class);
 
-        private final PathWatcher delegate;
+        private final WatchServicePathWatcher delegate;
         private final ExecutorService executorService;
         private final LifecycleListener lifecycleListener;
         // We cannot ensure that #start() and #stop() are called from the same thread.
@@ -123,7 +198,7 @@ public final class PathWatcherFactory {
          * @param executorService   The executor service that will be used to schedule the <code>delegate</code>
          * @param lifecycleListener Lifecycle listener that will be notified on lifecycle events of this path watcher.
          */
-        private RunnablePathWatcherAdapter(PathWatcher delegate,
+        private RunnablePathWatcherAdapter(WatchServicePathWatcher delegate,
                                            ExecutorService executorService,
                                            LifecycleListener lifecycleListener) {
             this.delegate = delegate;
@@ -135,10 +210,11 @@ public final class PathWatcherFactory {
          * @see PathWatcher#start()
          */
         @Override
-        public PathWatcher start() {
+        public PathWatcher start() throws IOException {
             if (future != null) {
                 throw new IllegalStateException("Cannot start a PathWatcher that is already running.");
             }
+            delegate.start();
             LOG.trace("Submitting '{}' to executor service.", delegate);
             //submit itself when client wants to start watching. The pool will invoke the runnable when its ready
             future = executorService.submit(this);
@@ -167,8 +243,14 @@ public final class PathWatcherFactory {
         @Override
         public void run() {
             LOG.trace("About to run '{}'.", delegate);
+            Silently.run(new Block() {
+                @Override
+                public void run() {
+                    lifecycleListener.onStart(RunnablePathWatcherAdapter.this);
+                }
+            });
             try {
-                delegate.start();
+                delegate.watch();
                 //Catch all exceptions - not just IOException. Implementation might throw other exceptions as well
             } catch (final Exception e) {
                 LOG.trace("'" + delegate + "' threw an exception", e);

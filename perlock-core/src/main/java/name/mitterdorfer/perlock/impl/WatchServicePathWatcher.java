@@ -1,6 +1,6 @@
 package name.mitterdorfer.perlock.impl;
 
-import name.mitterdorfer.perlock.LifecycleListener;
+import name.mitterdorfer.perlock.EventKind;
 import name.mitterdorfer.perlock.impl.watch.WatchRegistrationFactory;
 import name.mitterdorfer.perlock.impl.util.Preconditions;
 import name.mitterdorfer.perlock.impl.watch.WatchRegistrationStrategy;
@@ -34,7 +34,6 @@ public final class WatchServicePathWatcher implements PathWatcher {
     private final PathChangeListener listener;
     private final Path rootPath;
     private final WatchRegistrationStrategy registry;
-    private final LifecycleListener lifecycleListener;
     //no need to declare watcher as volatile. It should only be used from the Watcher thread, otherwise something went
     //seriously wrong...
     private WatchService watcher;
@@ -44,12 +43,10 @@ public final class WatchServicePathWatcher implements PathWatcher {
     public WatchServicePathWatcher(Path rootPath,
                                    WatchRegistrationFactory factory,
                                    boolean recursive,
-                                   PathChangeListener listener,
-                                   LifecycleListener lifecycleListener) {
+                                   PathChangeListener listener) {
         Preconditions.isNotNull(rootPath, "rootPath");
         Preconditions.isNotNull(factory, "factory");
         Preconditions.isNotNull(listener, "listener");
-        Preconditions.isNotNull(lifecycleListener, "lifecycleListener");
         Preconditions.isTrue(Files.exists(rootPath), String.format("'rootPath' (%s) must exist", rootPath.getFileName()));
         Preconditions.isTrue(Files.isReadable(rootPath), String.format("'rootPath' (%s) must be readable", rootPath.getFileName()));
         Preconditions.isTrue(Files.isDirectory(rootPath), String.format("'rootPath' (%s) must be a directory", rootPath.getFileName()));
@@ -57,7 +54,6 @@ public final class WatchServicePathWatcher implements PathWatcher {
         this.keys = new HashMap<>();
         this.rootPath = rootPath;
         this.listener = listener;
-        this.lifecycleListener = lifecycleListener;
         this.registry = factory.createRegistrationStrategy(keys, recursive);
     }
 
@@ -87,8 +83,7 @@ public final class WatchServicePathWatcher implements PathWatcher {
         prepareWatcher();
         performRegistration();
         running = true;
-        lifecycleListener.onStart(this);
-        watch();
+        //watch();
         return this;
     }
 
@@ -97,7 +92,7 @@ public final class WatchServicePathWatcher implements PathWatcher {
         return running;
     }
 
-    private void watch() {
+    public void watch() {
         LOG.trace("Waiting for file system events");
         boolean moreKeysToProcess = true;
         while(moreKeysToProcess && !Thread.currentThread().isInterrupted()) {
@@ -139,7 +134,7 @@ public final class WatchServicePathWatcher implements PathWatcher {
                     Path name = ev.context();
                     Path child = dir.resolve(name);
                     LOG.trace("Handling watch event with kind '{}' for path '{}'.", kind, child);
-                    handleEvent(ev, child);
+                    listener.onPathChanged(EventKind.eventKindForWatchEventKind(ev.kind()), child);
 
                     if (kind == ENTRY_CREATE) {
                         try {
@@ -148,6 +143,8 @@ public final class WatchServicePathWatcher implements PathWatcher {
                             LOG.warn("Could not register watch for '{}'.", child);
                         }
                     }
+                } else {
+                    LOG.warn("Watch service event overflow.");
                 }
             }
         } else {
@@ -184,18 +181,6 @@ public final class WatchServicePathWatcher implements PathWatcher {
             this.keys.clear();
             //we're not running anymore
             this.running = false;
-        }
-    }
-
-    private void handleEvent(WatchEvent<Path> event, Path child) {
-        if (event.kind().equals(ENTRY_CREATE)) {
-            listener.onPathCreated(child);
-        } else if (event.kind().equals(ENTRY_MODIFY)) {
-            listener.onPathModified(child);
-        } else if (event.kind().equals(ENTRY_DELETE)) {
-            listener.onPathDeleted(child);
-        } else {
-            throw new IllegalArgumentException("Unrecognized event kind '" + event.kind() + "'.");
         }
     }
 

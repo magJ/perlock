@@ -1,7 +1,7 @@
 package name.mitterdorfer.perlock.examples;
 
 import name.mitterdorfer.perlock.PathWatcher;
-import name.mitterdorfer.perlock.SinglePathWatcherFactory;
+import name.mitterdorfer.perlock.PathWatcherFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,18 +9,16 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * This example application demonstrates how to create and use a path watcher. The demo accepts two command line
- * parameters:
+ * This example application demonstrates how to create and use a single path watcher. The demo accepts a single
+ * command line parameter:
  *
  * <ol>
- *     <li><code>--recursive</code> to watch a path recursively or <code>--non-recursive</code> to watch
- * non-recursively (i.e. only in the provided path but not below)</li>
  *      <li><code>path</code> which is the path to watch</li>
  * </ol>
  *
- * If you invoke the sample application as follows, it watches the home folder (on Unix): <code>java -jar perlock-examples.jar --non-recursive ~</code>
+ * If you invoke the sample application as follows, it watches myfile.txt in the home folder (on Unix): <code>java -jar perlock-examples.jar ~/myfile.txt</code>
  */
-class SinglePathWatcherDemo {
+public class SinglePathWatcherDemo {
     private static final Logger LOGGER = LoggerFactory.getLogger(SinglePathWatcherDemo.class);
 
     public static void main(String[] args) throws Exception {
@@ -30,8 +28,8 @@ class SinglePathWatcherDemo {
         }
         Path path = Paths.get(pathName).toAbsolutePath();
 
-        PathWatcher watcher = SinglePathWatcherFactory.createSinglePathWatcher(path,
-                eventKind -> LOGGER.info("Event: {}", eventKind)).start();
+        PathWatcher watcher = PathWatcherFactory.createSinglePathWatcher(path,
+                (eventKind, p) -> LOGGER.info("Event: {}", eventKind)).start();
 
 
         //noinspection ResultOfMethodCallIgnored

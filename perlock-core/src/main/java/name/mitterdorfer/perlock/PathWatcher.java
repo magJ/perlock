@@ -22,7 +22,7 @@ public interface PathWatcher {
     /**
      * Determines whether this <code>PathWatcher</code> instance is currently running.
      *
-     * @return true if this <code>PathWatcher</code> instance is currently running.
+     * @return true iff this <code>PathWatcher</code> instance is currently running.
      */
     boolean isRunning();
 
