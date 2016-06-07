@@ -83,7 +83,6 @@ public final class WatchServicePathWatcher implements PathWatcher {
         prepareWatcher();
         performRegistration();
         running = true;
-        //watch();
         return this;
     }
 

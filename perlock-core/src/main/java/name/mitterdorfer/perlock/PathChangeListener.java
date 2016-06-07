@@ -12,9 +12,10 @@ import java.nio.file.Path;
 public interface PathChangeListener {
 
     /**
-     * This method has to be called when a new path is created.
+     * This method is called when an event occurs on a watched path.
      *
-     * @param path The path that has been created. Must not be null.
+     * @param eventKind The event kind that has occurred on the path. Must not be null
+     * @param path The path that has changed. Must not be null.
      */
     void onPathChanged(EventKind eventKind, Path path);
 

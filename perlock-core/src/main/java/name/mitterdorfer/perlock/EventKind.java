@@ -32,7 +32,7 @@ public enum EventKind {
         WATCH_EVENT_KIND_TO_EVENT_KIND = Collections.unmodifiableMap(eventKindMap);
     }
 
-    private WatchEvent.Kind<Path> watchEventKind;
+    private final WatchEvent.Kind<Path> watchEventKind;
 
     EventKind(WatchEvent.Kind<Path> watchEventKind) {
         this.watchEventKind = watchEventKind;
